@@ -1,0 +1,13 @@
+---
+
+
+disk_discover_aws_nvme_ebs:  false 
+
+disk_additional_disks:
+ - disk: /dev/xvdb
+   fstype: ext4
+   mount_options: defaults
+   mount: /data
+   user: ubuntu
+   group: ubuntu
+   disable_periodic_fsck: false
