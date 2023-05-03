@@ -3,17 +3,30 @@
     config: "{{ disk_additional_disks }}"
   register: __disk_config
   when: disk_discover_aws_nvme_ebs | default(True) | bool
+  tags: ['disk']
 
-- set_fact:
-    disk_additional_disks: "{{ __disk_config['ansible_facts']['config'] }}"
-  when: __disk_config is defined and __disk_config | success and 'ansible_facts' in __disk_config
+- name: setting fact if ansible version is 2.5 or older
+  block:
+  - set_fact:
+      disk_additional_disks: "{{ __disk_config['ansible_facts']['config'] }}"
+    when: __disk_config is defined and __disk_config | success and 'ansible_facts' in __disk_config
+  when: ansible_version.full is version('2.5.0', '<')
+  tags: ['disk']
+
+- name: setting fact if ansible version is newer than 2.5
+  block:
+  - set_fact:
+      disk_additional_disks: "{{ __disk_config['ansible_facts']['config'] }}"
+    when: __disk_config is defined and __disk_config is successful and 'ansible_facts' in __disk_config
+  when: ansible_version.full is version('2.5.0', '>=')
+  tags: ['disk']
 
 - name: "Install parted"
   package:
     name: parted
     state: present
     use: '{{ disk_package_use }}'
-  when: disk_additional_disks
+  when: disk_additional_disks and disk_enable_partitioning
   tags: ['disk', 'pkgs']
 
 - name: "Install additional fs progs"
@@ -37,6 +50,7 @@
     creates: '{{ item.part | default(item.disk + "1") }}'
     executable: '/bin/bash'
   with_items: '{{ disk_additional_disks }}'
+  when: disk_enable_partitioning
   register: disk_offset
   tags: ['disk']
 
@@ -51,11 +65,12 @@
     creates: '{{ item.part | default(item.disk + "1") }}'
     executable: '/bin/bash'
   with_items: '{{ disk_additional_disks }}'
+  when: disk_enable_partitioning
   tags: ['disk']
 
-- name: "Create filesystem on the first partition"
+- name: "Create filesystem on the volume"
   filesystem:
-    dev: '{{ item.part | default(item.disk + "1") }}'
+    dev: '{{ (disk_enable_partitioning == true) | ternary(item.part | default(item.disk + "1"), item.disk) }}'
     force: '{{ item.force|d(omit) }}'
     fstype: '{{ item.fstype }}'
     opts: '{{ item.fsopts|d(omit) }}'
@@ -63,7 +78,7 @@
   tags: ['disk']
 
 - name: "Disable periodic fsck on ext3 or ext4 formatted disks"
-  shell: tune2fs -c0 -i0 {{ item.part | default(item.disk + "1") }}
+  shell: 'tune2fs -c0 -i0 {{ (disk_enable_partitioning == true) | ternary(item.part | default(item.disk + "1"), item.disk) }}'
   with_items: '{{ disk_additional_disks }}'
   when: "disk_additional_disks and ( item.fstype == 'ext4' or item.fstype == 'ext3' ) and item.disable_periodic_fsck|default(false)|bool"
   tags: ['disk']
@@ -77,11 +92,12 @@
   with_items: '{{ disk_additional_disks }}'
   tags: ['disk']
 
-- name: "Get UUID for partition"
-  command: blkid -s UUID -o value {{ item.part | default(item.disk + "1") }}
+- name: "Get UUID for volume"
+  command: 'blkid -s UUID -o value {{ (disk_enable_partitioning == true) | ternary(item.part | default(item.disk + "1"), item.disk) }}'
   register: disk_blkid
   with_items: '{{ disk_additional_disks }}'
   changed_when: False
+  check_mode: no
   tags: ['disk']
 
 - name: "Mount additional disk"
@@ -91,7 +107,7 @@
     opts: '{{ item.0.mount_options|d(omit) }}'
     passno: '0'
     src: 'UUID={{ item.1.stdout }}'
-    state: '{{ item.0.mount_state|d("mounted") }}'
+    state: '{{ item.0.mount_state | default("mounted") }}'
   with_together:
     - '{{ disk_additional_disks }}'
     - '{{ disk_blkid.results }}'
@@ -102,6 +118,7 @@
     path: '{{ item.mount }}'
     owner: '{{ item.user | default("root") }}'
     group: '{{ item.group | default("root") }}'
+    mode: '{{ item.mode | default("0755") }}'
     state: directory
   with_items: '{{ disk_additional_disks }}'
   tags: ['disk']

@@ -22,6 +22,7 @@ disk_additional_disks:
    mount: /data
    user: www-data
    group: www-data
+   mode: "0755"
    disable_periodic_fsck: false
  - disk: /dev/nvme0n1
    part: /dev/nvme0n1p1
@@ -35,16 +36,18 @@ disk_additional_disks:
 ```
 
 * `disk` is the device, you want to mount.
-* `part` is the first partition name. If not specified, `1` will be appended to the disk name.
+* `part` is the first partition name. If not specified and partitioning is enabled, `1` will be appended to the disk name.
 * `fstype` allows you to choose the filesystem to use with the new disk.
 * `mount_options` allows you to specify custom mount options.
 * `mount` is the directory where the new disk should be mounted.
 * `user` sets owner of the mount directory (default: `root`).
 * `group` sets group of the mount directory (default: `root`).
+* `mode` sets the mountpoint directory permissions (default: `0755`).
 * `disable_periodic_fsck` deactivates the periodic ext3/4 filesystem check for the new disk.
 
 You can add:
 * `disk_package_use` is the required package manager module to use (yum, apt, etc). The default 'auto' will use existing facts or try to autodetect it.
+* `disk_enable_partioning: false` to disable partitioning
 
 The following filesystems are currently supported:
 - [ext2](http://en.wikipedia.org/wiki/Ext2)
@@ -67,4 +70,4 @@ How it works
 
 It uses `sfdisk` to partition the disk with a single primary partition spanning the entire disk.
 The specified filesystem will then be created with `mkfs`.
-Finally the new partition will be mounted to the specified mount path.
+Finally the new filesystem will be mounted to the specified mount path.
